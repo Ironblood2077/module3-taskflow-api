@@ -1,0 +1,19 @@
+# Version control and build output
+.git
+.gitignore
+.gitattributes
+target
+
+# Local secrets - never send to the Docker build
+.env
+.env.*
+*.env
+
+# Editor / OS artifacts
+.idea
+*.iml
+.vscode
+.settings
+.classpath
+.project
+.DS_Store
