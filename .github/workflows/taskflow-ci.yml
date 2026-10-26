@@ -1,0 +1,75 @@
+name: TaskFlow CI and Docker Hub
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taskflow-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Maven tests and Docker build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Java 21 and Maven cache
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run all Maven tests and package application
+        run: ./mvnw --batch-mode --no-transfer-progress clean verify
+
+      - name: Validate multi-stage Docker build
+        run: docker build --pull --tag "taskflow:ci-${{ github.sha }}" .
+
+  publish:
+    name: Publish versioned image to Docker Hub
+    needs: verify
+    # Publishing activates only after the Docker Hub username repo variable is set.
+    # PRs never publish, and the token is never available to the verify job.
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DOCKERHUB_USERNAME != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify Docker Hub token is configured
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::error::Repository secret DOCKERHUB_TOKEN is missing. Configure it before enabling publishing."
+            exit 1
+          fi
+
+      - name: Sign in to Docker Hub without exposing token
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Build and publish commit and latest tags
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+        run: |
+          set -euo pipefail
+          image="${DOCKERHUB_USERNAME}/taskflow-api"
+          short_sha="${GITHUB_SHA:0:12}"
+          docker build --pull --tag "${image}:sha-${short_sha}" --tag "${image}:latest" .
+          docker push "${image}:sha-${short_sha}"
+          docker push "${image}:latest"
