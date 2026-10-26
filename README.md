@@ -220,7 +220,56 @@ codes, response headers and JSON bodies are unaltered):**
   locally only** - the summary endpoint was deliberately not called on Render.
   With no tasks it returns a fixed message without calling OpenAI.
 
-### Stretch goals (not implemented)
+### Continuous integration - GitHub Actions and Docker Hub
 
-- [ ] GitHub Actions CI pipeline (build and test on every push)
-- [ ] Security Checks / Dependency Scanning
+The workflow [`.github/workflows/taskflow-ci.yml`](.github/workflows/taskflow-ci.yml)
+automates testing, building and publishing. Full setup notes are in
+[`docs/module4-ci-setup.md`](docs/module4-ci-setup.md).
+
+| Job | Runs on | What it does |
+|-----|---------|--------------|
+| **Maven tests and Docker build** | Every pull request to `main`, every push to `main`, manual runs | Sets up Java 21, runs `./mvnw clean verify` (the real test suite), then builds the multi-stage `Dockerfile` |
+| **Publish versioned image to Docker Hub** | Pushes and manual runs on `main` only, after the first job passes | Logs in to Docker Hub and pushes `latest` plus an immutable `sha-<commit>` tag |
+
+Security notes:
+
+- The workflow token is limited to `contents: read`.
+- Third-party actions are pinned to full commit SHAs.
+- Pull requests never receive Docker Hub credentials and never publish.
+- The Docker Hub access token is stored as the `DOCKERHUB_TOKEN` repository
+  secret and passed to `docker login` via stdin, so it never appears in logs.
+- The workflow does **not** deploy to Render; the live Render service above
+  is unchanged.
+
+**Evidence:**
+
+| Item | Value |
+|------|-------|
+| Pull request | [#1 - add GitHub Actions workflow](https://github.com/Ironblood2077/module3-taskflow-api/pull/1) (merged) |
+| Successful run | [TaskFlow CI and Docker Hub #3](https://github.com/Ironblood2077/module3-taskflow-api/actions/runs/40370210720) - both jobs succeeded on `main` @ `57cf5e9` |
+| Docker Hub repository | <https://hub.docker.com/r/axeldemoe/taskflow-api/tags> |
+| Published tags | `axeldemoe/taskflow-api:latest`, `axeldemoe/taskflow-api:sha-57cf5e9d05af` |
+| Image | `linux/amd64`, both tags share digest `sha256:bffc3e3377a1...` |
+
+Pull the published image and run it:
+
+```bash
+docker pull axeldemoe/taskflow-api:latest
+docker run --rm -p 8080:8080 axeldemoe/taskflow-api:latest
+```
+
+#### GitHub Actions run #3
+
+![GitHub Actions run #3 for TaskFlow CI and Docker Hub: status Success on main at 57cf5e9, both the Maven tests and Docker build job and the Publish versioned image to Docker Hub job succeeded](screenshots/github-actions-run.png)
+
+#### Docker Hub tags
+
+![Docker Hub tags page for axeldemoe/taskflow-api showing the latest and sha-57cf5e9d05af tags, both linux/amd64 with digest bffc3e3377a1](screenshots/dockerhub-tags.png)
+
+Screenshots are cropped to remove browser tabs and profile details; URLs,
+statuses, tags and digests are unaltered.
+
+### Stretch goals
+
+- [x] **Stretch Goal 1 - GitHub Actions CI with Docker Hub publishing** (see above)
+- [ ] **Stretch Goal 5 - Security Checks / Dependency Scanning** (not implemented)
