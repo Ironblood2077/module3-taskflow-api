@@ -248,8 +248,9 @@ Security notes:
 | Pull request | [#1 - add GitHub Actions workflow](https://github.com/Ironblood2077/module3-taskflow-api/pull/1) (merged) |
 | Successful run | [TaskFlow CI and Docker Hub #3](https://github.com/Ironblood2077/module3-taskflow-api/actions/runs/40370210720) - both jobs succeeded on `main` @ `57cf5e9` |
 | Docker Hub repository | <https://hub.docker.com/r/axeldemoe/taskflow-api/tags> |
-| Published tags | `axeldemoe/taskflow-api:latest`, `axeldemoe/taskflow-api:sha-57cf5e9d05af` |
-| Image | `linux/amd64`, both tags share digest `sha256:bffc3e3377a1...` |
+| Published tags (run #3) | `axeldemoe/taskflow-api:latest`, `axeldemoe/taskflow-api:sha-57cf5e9d05af` |
+| Image (run #3) | `linux/amd64`. At the time of run #3 - the historical snapshot shown in the screenshot below - both tags shared digest `sha256:bffc3e3377a1...` |
+| Later runs | Every push to `main` republishes `latest`, so `latest` has since moved to a newer digest (first at run #4). The commit-tagged image `sha-57cf5e9d05af` still points to the run #3 digest. |
 
 Pull the published image and run it:
 
@@ -269,7 +270,63 @@ docker run --rm -p 8080:8080 axeldemoe/taskflow-api:latest
 Screenshots are cropped to remove browser tabs and profile details; URLs,
 statuses, tags and digests are unaltered.
 
+### Security Checks - OWASP Dependency-Check
+
+A dependency vulnerability scan was run on **28 October 2026** against commit
+`c7a428a` (Spring Boot 4.1.1, Spring AI 2.0.0) using the **OWASP
+Dependency-Check Maven plugin 13.0.0** with NVD data, producing HTML and JSON
+reports. Full methodology, per-CVE assessments and the reproducible command
+(which reads the NVD API key from the `NVD_API_KEY` environment variable) are
+in [`docs/module4-security-audit.md`](docs/module4-security-audit.md).
+
+| Result | Value |
+|--------|-------|
+| Dependencies analysed | 52 |
+| Vulnerability associations | 23 |
+| Unique CVEs | 22 |
+| Critical / High / Medium (associations) | 8 / 8 / 7 |
+| Critical / High / Medium (unique CVEs) | 7 / 8 / 7 |
+
+**Findings in brief:**
+
+- **Apache Tomcat 11.0.24 (11 CVEs)** - fixed by Apache in 11.0.25. They depend
+  on features TaskFlow does not use (authentication, security constraints,
+  HTTP/2, TLS in Tomcat, WebSocket, rewrite rules); one HTTP/2 item still
+  needs confirmation.
+- **Spring AI 2.0.0 (7 CVEs)** - fixed in 2.0.1. Six affect modules TaskFlow
+  does not ship. The tool-calling issue (CVE-2026-59318) is in shipped code
+  but TaskFlow registers no tools.
+- **Netty 4.2.17 (1 CVE)** - request smuggling in the HTTP decoder. The decoder
+  is shipped, but TaskFlow runs no Netty server and does not use Netty as its
+  HTTP client.
+- **Kotlin standard libraries (2 CVEs)** - one suspected false positive (a
+  build-tool issue) and one on a metadata-only JAR with no executable code.
+- **Spring Boot DevTools (1 CVE)** - confirmed false positive (the CVE is for
+  the Spring Tools IDE), and DevTools is not packaged in the deployable JAR.
+
+No finding was shown to be exploitable in the current configuration, but the
+vulnerable library code is still shipped.
+
+**Remediation deferred.** The recommended updates - Spring Boot 4.1.1 → 4.1.2
+and Spring AI 2.0.0 → 2.0.1 - are **not implemented**. They need their own
+branch, regression tests, CI run and a fresh scan before any finding can be
+marked resolved.
+
+**Scanner limitations:**
+
+- The .NET Assembly Analyzer did not initialise (the only DLL is a native Netty
+  QUIC library).
+- Sonatype OSS Index was unavailable, so NVD was the only data source.
+- NVD lags vendor advisories: Apache and Netty list further fixes for these
+  versions that the scan did not report.
+- The Docker base image was not scanned.
+
+The scan is complete, but **TaskFlow is not certified vulnerability-free**.
+The generated reports stay in `target/` and are not committed.
+
 ### Stretch goals
 
-- [x] **Stretch Goal 1 - GitHub Actions CI with Docker Hub publishing** (see above)
-- [ ] **Stretch Goal 5 - Security Checks / Dependency Scanning** (not implemented)
+- [x] **Stretch Goal 1 - GitHub Actions CI and Docker Hub** (see above)
+- [x] **Stretch Goal 5 - Security Checks / Dependency Scanning** - the scan,
+  analysis and documentation are complete. This does **not** mean every CVE
+  was remediated; see [`docs/module4-security-audit.md`](docs/module4-security-audit.md).
